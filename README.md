@@ -14,14 +14,14 @@ Resources we create:
 - A key pair, this should probably be optional as well so you could supply an already existing one.
 
 ##  Generating private and public keys
-### Private keys
+### Private key for your server
 ```wg genkey | tee server_private_key | wg pubkey > server_public_key```
 
 ### Public key for your client
 ```wg genkey | tee client_private_key | wg pubkey > client_public_key```
 
 ## Upload WireGuard private key to SSM
-In the [parameter store](https://eu-west-1.console.aws.amazon.com/systems-manager/parameters?region=eu-west-1) of your favorite region, create a parameter with the contents of your Wireguard private key, e.g. `/ec2/vpn_node/server_privatekey`
+In the [parameter store](https://eu-west-1.console.aws.amazon.com/systems-manager/parameters?region=eu-west-1) of your favorite region, create a SecureString parameter with the contents of your Wireguard private key, e.g. `/ec2/vpn_node/server_privatekey`
 
 
 ## Example `terraform.tfvars`:
