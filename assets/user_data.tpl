@@ -11,13 +11,15 @@ apt-get install -y --no-install-recommends wireguard-dkms wireguard-tools awscli
 
 
 ## Wireguard config
+EXT_NIC=$(route | grep '^default' | grep -o '[^ ]*$')
+
 cat > /etc/wireguard/wg0.conf <<- EOF
 [Interface]
 Address = ${wg_server_address_with_cidr}
 PrivateKey = WG_PRIV_KEY
 ListenPort = ${wg_server_port}
-PostUp   = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE
+PostUp   = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $EXT_NIC -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $EXT_NIC -j MASQUERADE
 ${peers}
 EOF
 
