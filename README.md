@@ -1,56 +1,119 @@
 # A Terraform deployment for setting up a WireGuard server in AWS
 This Terraform deployment sets up a WireGuard server in AWS, in a default subnet in the default VPC.
 
-To avoid storing the WireGuard private key in the state/tfvars file we store it in SSM and fetch it at the first boot.
+To avoid storing the WireGuard private key in the `terraform.tfstate`/`terraform.tfvars` file we store it as a SecureString in AWS SSM Parameter Store and inject it into WireGuard's `wg0.conf` on the first boot with our user-data script.
 
-This is a POC just to get something up and running quickly. Currently any changes to the peers config in terraform.tfvars triggers a redeploy of the EC2 instance.
+Due to the way Terraform handles changes to certain resource parameters, any changes to the `wg_*` variables will trigger a redeploy of the instance. This is intended behaviour.
 
-Resources we create:
-- A EC2 instance that sets up WireGuard and Unbound at first boot via user-data
-- Elastic IP for the EC2 instance
-- IAM instance role with policies to allow fetching of the secret from SSM
-- DNS records for the EC2 instance, but this should be optional
-- Security groups for the instance, that allows SSH from trusted management networks and WireGuard traffic from anywhere.
-- A key pair, this should probably be optional as well so you could supply an already existing one.
+On the first boot, the provided user-data script installs aws-cli (for fetching the server's private key from SSM), WireGuard and Unbound (so the server can act as a DNS resolver).
+
+By default we do not open up SSH access to the internet, we instead rely on SSM Session Manager to be able to connect to the instance. To open up for SSH access, add your IP-address/network to the mgmt_allowed_hosts variable.
+
+### Created resources
+- EC2 instance, that is automatically configured with user-data.
+- A Elastic IP address, so our instance will keep the same public IP address.
+- A security group, that permits management access from a trusted network and WireGuard access from 0.0.0.0/0.
+- IAM roles.
+- (Optional) SSH key pair.
+- (Optional) A record in Route53 pointed at the elastic IP address. Note that this requires a Route53 hosted zone to already be present.
 
 ##  Generating private and public keys
-### Private key for your server
-```wg genkey | tee server_private_key | wg pubkey > server_public_key```
+WireGuard does not have username and password, instead it relies on public-key cryptography for authentication. The server has a pair with a private and public key, and the clients has their own pairs of private and public keys.
+User management on the server side consists of addings peers to `wg0.conf` like so:
+```
+[Peer]
+PublicKey = gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA=
+AllowedIPs = 10.10.10.230/32
+```
 
-### Public key for your client
-```wg genkey | tee client_private_key | wg pubkey > client_public_key```
+and then running `wg addconf wg0 <(wg-quick strip wg0)` as root to add your peer to the running WireGuard instance. Note that `wg addconf` will not remove peers from the running instance if they were deleted from the configuration. 
 
-## Upload WireGuard private key to SSM
-In the [parameter store](https://eu-west-1.console.aws.amazon.com/systems-manager/parameters?region=eu-west-1) of your favorite region, create a SecureString parameter with the contents of your Wireguard private key, e.g. `/ec2/vpn_node/server_privatekey`
+To restart WireGuard run `sudo wg-quick down wg0 && sudo wg-quick up wg0`.
 
+### How to generate private and public keys
+By running ```wg genkey | tee wg_private.key | wg pubkey > wg_public.key``` two sets of keys are written to your current folder. One consists of you private key and the other of your public key.
+
+## Store your WireGuard private key in SSM
+In the [parameter store](https://eu-north-1.console.aws.amazon.com/systems-manager/parameters?region=eu-north-1) of your favorite region, create a SecureString parameter containing the private key you created for your server, and give it a name, like  `/ec2/vpn_node/server_privatekey`
+
+## Connecting to WireGuard
+After your server is created, you can connect to it with the WireGuard clients.  
+Here is an example where we assume you set the allowed IP address for a client to `192.168.2.2/32`.
+
+```
+[Interface]
+PrivateKey = {your_client_private_key}
+Address = 192.168.2.2/32
+DNS = 192.168.2.1
+
+[Peer]
+PublicKey = {your_server_public_key}
+AllowedIPs = 0.0.0.0/0 # Set to 0.0.0.0/0 to route all traffic via the tunnel.
+Endpoint = {your_server_fqdn}:51820
+```
 
 ## Example `terraform.tfvars`:
 ```
 aws_region             = "eu-north-1"
 aws_availability_zones = ["eu-north-1a", "eu-north-1b", "eu-north-1c"]
-aws_account_id         = "your_account_id"
+aws_account_id         = "some_account_id"
 
-ssh_public_key = "some ssh-key"
-
-dns_zone = "myzone.net"
-dns_fqdn = "vpn.eun1.aws.myzone.net"
+dns_zone = "some_domain.net"
+dns_fqdn = "vpn.eun1.some_domain.net"
 
 instance_type = "t3.micro"
 
 wg_privkey_ssm_path = "/ec2/vpn_node/server_privatekey"
 
-mgmt_allowed_hosts = [
-  "8.8.8.8/32"
-]
-
 wg_client_public_keys = {
-    "user1-desktop" = {
-        "ip" = "192.168.2.2/32"
-        "public_key" = "some_public_key"
-    }
-    "user1-iphone" = {
-        "ip" = "192.168.2.3/32"
-        "public_key" = "some_public_key"
-    }
+  "user1-desktop" = {
+    "ip"         = "192.168.2.2/32"
+    "public_key" = "cdcdcdcdcdcdcdcd"
+  }
+  "user1-phone" = {
+    "ip"         = "192.168.2.3/32"
+    "public_key" = "abababababababa"
+  }
 }
 ```
+
+### Adding DNS Public key
+```
+# ssh_public_key = "ssh-rsa some-ssh-key"
+```
+
+### Allowing SSH access 
+```
+mgmt_allowed_hosts = [
+   "8.8.8.8/32",
+   "9.9.9.0/24"
+]
+```
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:-----:|
+| aws\_account\_id | The AWS account ID this deployments belongs to. | `any` | n/a | yes |
+| aws\_availability\_zones | The AWS availability zones to deploy resources in. | `list(string)` | n/a | yes |
+| aws\_region | The AWS region to deploy resources in. | `any` | n/a | yes |
+| dns\_fqdn | (Optional) The FQDN of the A record pointing to the EC2 instance. | `string` | n/a | yes |
+| dns\_zone | (Optional) The Route53 hosted zone to add DNS records to. | `string` | n/a | yes |
+| instance\_name | A name to attach to the EC2 instance. | `string` | `"wireguard-vpn-node"` | no |
+| instance\_type | The type of instance to start. Updates to this field will trigger a stop/start of the EC2 instance. | `string` | `"t3.micro"` | no |
+| mgmt\_allowed\_hosts | A list of hosts/networks to open up SSH access to. | `list` | `[]` | no |
+| sg\_wg\_allowed\_subnets | A list of hosts/networks to open up WireGuard access to. | `list` | <pre>[<br>  "0.0.0.0/0"<br>]<br></pre> | no |
+| ssh\_public\_key | (Optional) A SSH public key to create a key pair for in AWS EC2. | `string` | n/a | yes |
+| tags | A map with tags to attach to all created resources. | `map` | `{}` | no |
+| wg\_client\_public\_keys | List of maps of client IPs and public keys. See Usage in README for details. | `map(map(string))` | n/a | yes |
+| wg\_persistent\_keepalive | Persistent Keepalive - useful for helping connectiona stability over NATs | `number` | `25` | no |
+| wg\_privkey\_ssm\_path | The path to the WireGuard server's private key in SSM | `any` | n/a | yes |
+| wg\_server\_network\_cidr | The internal network to use for WireGuard. Remember to place the clients in the same subnet. | `string` | `"192.168.2.0/24"` | no |
+| wg\_server\_port | The port WireGuard should listen on. | `number` | `51820` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| vpn\_node\_fqdn | The FQDN of the EC2 instance. |
+| vpn\_node\_public\_ip | The public IP of the EC2 instance. |

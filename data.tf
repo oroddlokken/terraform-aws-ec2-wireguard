@@ -15,7 +15,6 @@ data "aws_ami" "ubuntu" {
 }
 
 data "aws_ssm_parameter" "wg_private_key" {
-  # We want to check that it actually exists
   name            = var.wg_privkey_ssm_path
   with_decryption = false
 }
@@ -34,6 +33,8 @@ data "aws_subnet" "main" {
 }
 
 data "aws_route53_zone" "main" {
+  count = var.dns_zone != null ? 1 : 0
+
   name         = var.dns_zone
   private_zone = false
 }

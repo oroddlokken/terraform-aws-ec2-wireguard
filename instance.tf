@@ -2,11 +2,14 @@ resource "aws_instance" "main" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
 
-  tags = {
-    Name = var.instance_name
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = var.instance_name
+    }
+  )
 
-  key_name = aws_key_pair.vpn_node.key_name
+  key_name = var.ssh_public_key != null ? aws_key_pair.main.0.key_name : null
 
   associate_public_ip_address = true
 
@@ -23,6 +26,8 @@ resource "aws_instance" "main" {
 
 resource "aws_eip" "main" {
   vpc = true
+
+  tags = var.tags
 }
 
 resource "aws_eip_association" "main" {
