@@ -18,7 +18,11 @@ By default we do not open up SSH access to the internet, we instead rely on SSM 
 - (Optional) A record in Route53 pointed at the elastic IP address. Note that this requires a Route53 hosted zone to already be present.
 
 ##  Generating private and public keys
-WireGuard does not have username and password, instead it relies on public-key cryptography for authentication. The server has a pair with a private and public key, and the clients has their own pairs of private and public keys.
+WireGuard does not have usernames or passwords, instead it relies on public-key cryptography for authentication. The server has a pair with a private and public key, and the clients has their own pairs of private and public keys.
+
+### How to generate private and public keys
+By running `wg genkey | tee wg_private.key | wg pubkey > wg_public.key` two sets of keys are written to your current folder. One consists of you private key and the other of your public key.
+
 User management on the server side consists of addings peers to `wg0.conf` like so:
 ```
 [Peer]
@@ -30,11 +34,9 @@ and then running `wg addconf wg0 <(wg-quick strip wg0)` as root to add your peer
 
 To restart WireGuard run `sudo wg-quick down wg0 && sudo wg-quick up wg0`.
 
-### How to generate private and public keys
-By running ```wg genkey | tee wg_private.key | wg pubkey > wg_public.key``` two sets of keys are written to your current folder. One consists of you private key and the other of your public key.
-
 ## Store your WireGuard private key in SSM
-In the [parameter store](https://eu-north-1.console.aws.amazon.com/systems-manager/parameters?region=eu-north-1) of your favorite region, create a SecureString parameter containing the private key you created for your server, and give it a name, like  `/ec2/vpn_node/server_privatekey`
+In the [parameter store](https://eu-north-1.console.aws.amazon.com/systems-manager/parameters?region=eu-north-1) of your favorite region, create a SecureString parameter containing the private key you created for your server, and give it a name, like  `/ec2/vpn_node/server_privatekey`.   
+The name of the parameter is the one you'll be referencing in the `wg_privkey_ssm_path` variable in `terraform.tfvars`.
 
 ## Connecting to WireGuard
 After your server is created, you can connect to it with the WireGuard clients.  
@@ -53,6 +55,8 @@ Endpoint = {your_server_fqdn}:51820
 ```
 
 ## Example `terraform.tfvars`:
+`wg_client_public_keys` is a map with maps, one for each client.
+
 ```
 aws_region             = "eu-north-1"
 aws_availability_zones = ["eu-north-1a", "eu-north-1b", "eu-north-1c"]
@@ -77,12 +81,12 @@ wg_client_public_keys = {
 }
 ```
 
-### Adding DNS Public key
+#### Adding DNS Public key
 ```
-# ssh_public_key = "ssh-rsa some-ssh-key"
+ssh_public_key = "ssh-rsa some-ssh-key"
 ```
 
-### Allowing SSH access 
+#### Allowing SSH access 
 ```
 mgmt_allowed_hosts = [
    "8.8.8.8/32",
