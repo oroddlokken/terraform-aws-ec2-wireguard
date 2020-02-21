@@ -93,9 +93,6 @@ tags = {
   "project" = "WireGuard"
 }
 
-dns_zone = "some_domain.net"
-dns_fqdn = "vpn.eun1.some_domain.net"
-
 instance_type = "t3.micro"
 
 wg_privkey_ssm_path = "/ec2/vpn_node/server_privatekey"
@@ -112,7 +109,7 @@ wg_client_public_keys = {
 }
 ```
 
-#### Adding DNS Public key
+#### Adding SSH Public key
 ```
 ssh_public_key = "ssh-rsa some-ssh-key"
 ```
@@ -123,6 +120,12 @@ mgmt_allowed_hosts = [
    "8.8.8.8/32",
    "9.9.9.0/24"
 ]
+```
+
+#### Add DNS record
+```
+dns_zone = "some_domain.net"
+dns_fqdn = "vpn.eun1.some_domain.net"
 ```
 
 ## Inputs
