@@ -13,7 +13,7 @@ By default we do not open up SSH access to the internet, we instead rely on SSM 
 - EC2 instance, that is automatically configured with user-data.
 - A Elastic IP address, so our instance will keep the same public IP address.
 - A security group, that permits management access from a trusted network and WireGuard access from 0.0.0.0/0.
-- IAM roles.
+- IAM roles. 
 - (Optional) SSH key pair.
 - (Optional) A record in Route53 pointed at the elastic IP address. Note that this requires a Route53 hosted zone to already be present.
 
@@ -54,6 +54,33 @@ AllowedIPs = 0.0.0.0/0 # Set to 0.0.0.0/0 to route all traffic via the tunnel.
 Endpoint = {your_server_fqdn}:51820
 ```
 
+## Connecting to instance with SSM
+* Make sure awscli is up to date
+* Make sure the [Session Manager Plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) is installed
+
+You can run ` aws ssm start-session --target YOUR_INSTANCE_ID` to connect to your instance. You'll be dropped in a sh-shell as the ssm-user user.
+
+Example:
+```
+$ WG_INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:project,Values=WireGuard" --query 'Reservations[*].Instances[*].{Instance:InstanceId}[0].Instance' --output text)
+
+$ aws ssm start-session --target $WG_INSTANCE_ID        
+
+Starting session with SessionId: ove-0985344d46b163ff8
+
+$ whoami
+ssm-user
+$ sudo wg
+interface: wg0
+  public key: kzVF236asdhasdhjferusaa/5VPQXmClH66ZRM=
+  private key: (hidden)
+  listening port: 51820
+
+peer: sBh0OUvBp4uzxbasdhqsrhjxsffgas7UadOw3c=
+  allowed ips: 192.168.2.3/32
+  persistent keepalive: every 25 seconds
+```
+
 ## Example `terraform.tfvars`:
 `wg_client_public_keys` is a map with maps, one for each client.
 
@@ -61,6 +88,10 @@ Endpoint = {your_server_fqdn}:51820
 aws_region             = "eu-north-1"
 aws_availability_zones = ["eu-north-1a", "eu-north-1b", "eu-north-1c"]
 aws_account_id         = "some_account_id"
+
+tags = {
+  "project" = "WireGuard"
+}
 
 dns_zone = "some_domain.net"
 dns_fqdn = "vpn.eun1.some_domain.net"
